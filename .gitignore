@@ -483,3 +483,7 @@ $RECYCLE.BIN/
 
 # Claude Code per-machine settings
 .claude/settings.local.json
+
+# AI-DLC workspace folders
+/.scratch/
+/.worktrees/

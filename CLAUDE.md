@@ -1,5 +1,11 @@
 # CLAUDE.md
 
+<!-- ai-dlc:begin pointer -->
+@AGENTS.md
+
+> Agent orchestration, routing, gates and memory rules live in [AGENTS.md](AGENTS.md), imported above. Claude Code reads `AGENTS.md` on its own only when there is no `CLAUDE.md`, so the import is what loads it here.
+<!-- ai-dlc:end pointer -->
+
 Reference implementation of HttpClient resilience pipelines in .NET 10 (`Microsoft.Extensions.Http.Resilience` /
 Polly v8, via `AddResilienceHandler`), built to be ported into a work project whose API does not follow REST.
 `src/ResiliencyTest.Resilience` is the part that gets copied; everything else exists to prove it works.
@@ -90,3 +96,10 @@ RequestSnapshotHandler        capture the request once
 Add an entry in `Scenarios.cs` using `ctx.Request(...)` with a chaos mode (`ChaosModes.*`), then assert with
 `ctx.Expect(...)` on the envelope **and** on `await ctx.ServerHitsAsync()`. Use a dedicated client in
 `appsettings.json` when a scenario needs shared state (breaker, bulkhead, limiter) that would bleed into others.
+
+<!-- ai-dlc:begin workspace-folders -->
+## Workspace folders (Claude Code only)
+
+- Write scratch files to `.scratch/<session-or-task>/` instead of Claude Code's built-in per-session scratchpad directory or the system temp directory.
+- `claude --worktree`, `EnterWorktree` and agents with `isolation: "worktree"` get their worktree under `.worktrees/` through the `WorktreeCreate` hook in `.claude/settings.json`. Claude Code keeps the worktrees it creates for subagents; remove each with `git worktree remove` once its branch is merged.
+<!-- ai-dlc:end workspace-folders -->
