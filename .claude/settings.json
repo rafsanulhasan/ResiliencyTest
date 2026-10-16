@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "agent": "ai-dlc:orchestrator",
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(dotnet --version)",
+      "Bash(dotnet build:*)",
+      "Bash(dotnet test:*)",
+      "Bash(dotnet stryker:*)",
+      "Bash(dotnet run:*)",
+      "Bash(dotnet sln:*)",
+      "Bash(dotnet add package:*)",
+      "Bash(dotnet add reference:*)",
+      "Bash(dotnet remove package:*)",
+      "Bash(dotnet remove reference:*)",
+      "Bash(dotnet list package:*)",
+      "Bash(dotnet list reference:*)",
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Read(./.env)",
+      "Read(./.env.*)"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node .claude/hooks/check-workflow.mjs",
+            "timeout": 60
+          }
+        ]
+      }
+    ],
+    "WorktreeCreate": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/worktree-create.mjs\" --root \".worktrees\"",
+            "timeout": 120
+          }
+        ]
+      }
+    ],
+    "WorktreeRemove": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/worktree-remove.mjs\"",
+            "timeout": 120
+          }
+        ]
+      }
+    ]
+  }
+}

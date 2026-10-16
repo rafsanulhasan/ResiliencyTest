@@ -1,0 +1,596 @@
+{
+  "$schema": "./workflow.schema.json",
+  "version": 1,
+  "agents": {
+    "disabled": [],
+    "custom": {}
+  },
+  "gates": {
+    "G1": {
+      "name": "Clarify",
+      "approves": "The user stories and their numbered acceptance criteria",
+      "approver": "human"
+    },
+    "G2": {
+      "name": "Refine / Align",
+      "approves": "The frozen spec, read after the architecture narrative",
+      "approver": "human"
+    },
+    "G3": {
+      "name": "Plan",
+      "approves": "The task plan",
+      "approver": "human",
+      "note": "The human may delegate this gate to the orchestrator for small plans."
+    },
+    "G4": {
+      "name": "Approve",
+      "approves": "The review report (not the diff)",
+      "approver": "human"
+    },
+    "release": {
+      "name": "Release go / no-go",
+      "approves": "The product-owner's go / no-go on the release scope and the release-gate checklist",
+      "approver": "human"
+    }
+  },
+  "lifecycles": {
+    "AI-DLC": {
+      "name": "Full lifecycle",
+      "kind": "primary",
+      "pickWhen": "A feature, epic or idea must go from intent to release (the default for feature work)",
+      "exitArtifact": "A released (or release-ready) feature, traceable brief -> stories / ACs -> ADRs / spec -> tasks -> code / tests / docs -> review report -> release notes",
+      "segments": ["PDLC", "ASDLC", "STBLC", "FDLC", "Release"],
+      "note": "Enter at the earliest missing artifact and run to the end. FDLC runs once per task or wave of tasks. Re-anchor on the frozen spec at every boundary after G2. Executed as request-routing Mode 4, full lifecycle traversal."
+    },
+    "PDLC": {
+      "name": "Product Design",
+      "kind": "segment",
+      "pickWhen": "The input is a vague idea, epic or business goal",
+      "exitArtifact": "Feature list, use-case diagrams, user stories with numbered ACs in docs/product/ and docs/backlog/backlog.md",
+      "stages": [
+        {
+          "id": "brief",
+          "agent": "product-owner",
+          "produces": ["docs/product/<slug>/brief.md"],
+          "after": [],
+          "critique": true,
+          "note": "Outcomes, features, use cases; returns a delegation list for requirement-analyst and product-manager."
+        },
+        {
+          "id": "stories",
+          "agent": "requirement-analyst",
+          "skills": ["requirement-analysis"],
+          "produces": ["User stories with testable, numbered ACs in docs/product/"],
+          "critique": true,
+          "note": "One question at a time until every story has testable, numbered ACs."
+        },
+        {
+          "id": "backlog",
+          "agent": "product-manager",
+          "skills": ["product-planning"],
+          "produces": ["docs/backlog/backlog.md"],
+          "note": "Backlog entries with the priority the product-owner decided."
+        },
+        {
+          "id": "accept",
+          "agent": "product-owner",
+          "produces": ["Acceptance of the stories and the backlog"],
+          "gate": "G1",
+          "loop": {
+            "to": "stories",
+            "on": "The product-owner sends the stories or the backlog back"
+          }
+        }
+      ]
+    },
+    "ASDLC": {
+      "name": "Architecture & Design",
+      "kind": "segment",
+      "pickWhen": "Stories exist but no agreed design / spec",
+      "exitArtifact": "ADRs in docs/architecture/decisions/ plus a frozen docs/specs/<slug>.spec.md per story, co-owned by software-architect and system-engineer",
+      "stages": [
+        {
+          "id": "architecture",
+          "agent": "software-architect",
+          "skills": ["architecture-design", "write-adr"],
+          "produces": ["docs/architecture/decisions/"],
+          "after": [],
+          "critique": true,
+          "note": "Each consequential decision becomes an ADR."
+        },
+        {
+          "id": "research",
+          "agent": "research-assistant",
+          "skills": ["research"],
+          "produces": ["Cited findings report"],
+          "after": [],
+          "when": "the design depends on an external fact (library, API, standard) the team has not verified",
+          "note": "Runs in parallel with the architecture stage."
+        },
+        {
+          "id": "low-level-design",
+          "agent": "system-engineer",
+          "skills": ["system-design"],
+          "produces": ["Low-level design (modules, patterns, DI plan)"],
+          "after": ["architecture", "research"]
+        },
+        {
+          "id": "spec",
+          "agent": "requirement-analyst",
+          "skills": ["spec-driven-development"],
+          "produces": ["docs/specs/<slug>.spec.md (status Frozen)"],
+          "after": ["low-level-design"],
+          "critique": true,
+          "note": "software-architect and system-engineer co-sign the spec; it is then frozen. Changes after freezing go back through this stage."
+        },
+        {
+          "id": "narrative",
+          "agent": "software-architect",
+          "skills": ["architecture-narrative"],
+          "produces": ["docs/architecture/narratives/<slug>.md"],
+          "after": ["spec"],
+          "critique": true,
+          "gate": "G2",
+          "note": "The three-act story (problem -> constraints and trade-offs -> design, ADRs, risks), written for the human who approves G2."
+        }
+      ]
+    },
+    "STBLC": {
+      "name": "Story & Task Breakdown",
+      "kind": "segment",
+      "pickWhen": "A frozen spec exists but no task plan",
+      "exitArtifact": "docs/plans/<slug>.tasks.md: estimated, dependency-ordered tasks, each with its own technical Definition of Done",
+      "stages": [
+        {
+          "id": "split",
+          "agent": "software-architect",
+          "produces": ["docs/plans/<slug>.tasks.md (draft)"],
+          "after": [],
+          "note": "Splits the frozen spec into tasks; each task records id, AC references, dependencies, estimate and technical DoD."
+        },
+        {
+          "id": "split-design",
+          "agent": "system-engineer",
+          "produces": ["docs/plans/<slug>.tasks.md (task boundaries refined)"],
+          "note": "Co-splits with software-architect at the low-level design boundaries."
+        },
+        {
+          "id": "estimate",
+          "agent": "software-engineer",
+          "produces": ["Estimates and flagged unknowns in the task plan"]
+        },
+        {
+          "id": "order",
+          "agent": "product-owner",
+          "produces": ["docs/plans/<slug>.tasks.md (ordered by priority)"],
+          "critique": true,
+          "gate": "G3"
+        }
+      ]
+    },
+    "FDLC": {
+      "name": "Feature Development",
+      "kind": "segment",
+      "pickWhen": "Tasks exist and code must land",
+      "exitArtifact": "Merge-ready change: code, tests, docs, review report with zero Blockers",
+      "note": "The build loop. Runs once per task or wave of tasks.",
+      "stages": [
+        {
+          "id": "build",
+          "agent": "software-engineer",
+          "skills": ["implement-feature"],
+          "produces": ["Implementation diff", "Green build and tests (the project's commands)"],
+          "after": [],
+          "note": "Every behaviour traces to a numbered AC; anything outside the spec goes back to ASDLC."
+        },
+        {
+          "id": "ui-tests",
+          "agent": "sqa-engineer",
+          "skills": ["playwright-mcp-ui-testing"],
+          "produces": ["Browser test report", "tests/screenshots/"],
+          "after": ["build"],
+          "when": "the change touches UI / frontend",
+          "note": "AI-driven UI tests run through the Playwright MCP tools."
+        },
+        {
+          "id": "tests",
+          "agent": "sqa-engineer",
+          "skills": ["design-test-cases", "write-tests"],
+          "produces": ["Test suite", "AC-traceability table", "Mutation report"],
+          "after": ["build"],
+          "loop": {
+            "to": "build",
+            "on": "A test or the mutation run reveals a defect in production code (Quality Check & Refinement)"
+          },
+          "note": "Also the stack's unit, integration, UI and mutation-testing skills (csharp-* or ts-*). Unit, integration and UI suites may fan out to parallel sqa-engineer instances."
+        },
+        {
+          "id": "docs",
+          "agent": "documentation-writer",
+          "skills": ["write-documentation"],
+          "produces": ["Updated README.md files for every changed component"],
+          "after": ["build"],
+          "critique": true
+        },
+        {
+          "id": "architecture-review",
+          "agent": "software-architect",
+          "skills": ["architecture-review"],
+          "produces": ["Architecture conformance findings"],
+          "after": ["ui-tests", "tests", "docs"],
+          "loop": {
+            "to": "build",
+            "on": "The change does not conform to the ADRs or the spec (Architecture Conformance)"
+          }
+        },
+        {
+          "id": "review",
+          "agent": "code-reviewer",
+          "skills": ["review"],
+          "produces": ["Severity-ranked findings report with zero Blockers"],
+          "after": ["architecture-review"],
+          "gate": "G4",
+          "loop": {
+            "to": "build",
+            "on": "Blockers in the review report; Blockers in test code go to the tests stage (Code Audit & Refinement)"
+          },
+          "note": "Fanned out to one code-reviewer per review axis."
+        }
+      ]
+    },
+    "BFLC": {
+      "name": "Bug Fixing",
+      "kind": "focused",
+      "pickWhen": "Incorrect behaviour, failing test, regression",
+      "exitArtifact": "Root cause statement, minimal fix, a regression test that failed before and passes after",
+      "stages": [
+        {
+          "id": "root-cause",
+          "agent": "software-engineer",
+          "skills": ["fix-bug"],
+          "produces": ["Root cause statement with file:line"],
+          "after": [],
+          "note": "fix-bug Phase 1 only. research-assistant if external behaviour is involved; software-architect if the cause is architectural."
+        },
+        {
+          "id": "security-review",
+          "agent": "code-reviewer",
+          "skills": ["security-review"],
+          "produces": ["Security review findings"],
+          "when": "the bug is a security issue",
+          "note": "Run before the fix lands; notify the product-owner afterwards."
+        },
+        {
+          "id": "regression-test",
+          "agent": "sqa-engineer",
+          "skills": ["write-tests"],
+          "produces": ["A regression test, shown failing"]
+        },
+        {
+          "id": "fix",
+          "agent": "software-engineer",
+          "skills": ["fix-bug"],
+          "produces": ["Minimal fix", "Regression test passes, full suite green"]
+        },
+        {
+          "id": "review",
+          "agent": "code-reviewer",
+          "skills": ["review"],
+          "produces": ["Findings report with zero Blockers"],
+          "after": ["fix"],
+          "loop": {
+            "to": "fix",
+            "on": "Blockers in the review report"
+          }
+        },
+        {
+          "id": "docs",
+          "agent": "documentation-writer",
+          "skills": ["write-documentation"],
+          "produces": ["Updated docs"],
+          "after": ["fix"],
+          "when": "behaviour visible to users changed",
+          "critique": true
+        }
+      ]
+    },
+    "RLC": {
+      "name": "Refactoring",
+      "kind": "focused",
+      "pickWhen": "Structure must change, behaviour must not",
+      "exitArtifact": "Refactor diff, unchanged public behaviour, mutation score not lower than baseline",
+      "stages": [
+        {
+          "id": "baseline",
+          "agent": "sqa-engineer",
+          "produces": ["Mutation baseline"],
+          "after": [],
+          "note": "The stack's mutation-testing skill, baseline mode, before any change."
+        },
+        {
+          "id": "target-structure",
+          "agent": "software-architect",
+          "skills": ["write-adr"],
+          "produces": ["Target structure (and any ADR)"],
+          "after": [],
+          "note": "Defined together with system-engineer."
+        },
+        {
+          "id": "refactor",
+          "agent": "software-engineer",
+          "produces": ["Refactor diff"],
+          "after": ["baseline", "target-structure"],
+          "note": "Small steps, tests green after each."
+        },
+        {
+          "id": "mutation-check",
+          "agent": "sqa-engineer",
+          "produces": ["Mutation report not lower than the baseline"],
+          "loop": {
+            "to": "refactor",
+            "on": "The mutation score regressed below the baseline"
+          }
+        },
+        {
+          "id": "review",
+          "agent": "code-reviewer",
+          "skills": ["review"],
+          "produces": ["Findings report confirming no behaviour change"],
+          "loop": {
+            "to": "refactor",
+            "on": "Blockers, or a behaviour change"
+          }
+        }
+      ]
+    },
+    "TLC": {
+      "name": "Testing",
+      "kind": "focused",
+      "pickWhen": "Existing code lacks coverage, AC traceability or mutation strength",
+      "exitArtifact": "Test plan, new tests, AC-traceability table, mutation report",
+      "stages": [
+        {
+          "id": "acceptance-scope",
+          "agent": "product-owner",
+          "produces": ["The ACs in scope"],
+          "after": []
+        },
+        {
+          "id": "risk-areas",
+          "agent": "software-architect",
+          "produces": ["Risk areas to cover"],
+          "after": []
+        },
+        {
+          "id": "test-design",
+          "agent": "sqa-engineer",
+          "skills": ["design-test-cases"],
+          "produces": ["Test plan with an AC-traceability table"],
+          "after": ["acceptance-scope", "risk-areas"],
+          "critique": true
+        },
+        {
+          "id": "tests",
+          "agent": "sqa-engineer",
+          "skills": ["write-tests"],
+          "produces": ["New tests", "Mutation report"],
+          "note": "Also the stack's mutation-testing skill. software-engineer touches production code only if a test reveals a bug, which forks a BFLC item."
+        },
+        {
+          "id": "review",
+          "agent": "code-reviewer",
+          "skills": ["review"],
+          "produces": ["Findings report on test quality"],
+          "loop": {
+            "to": "tests",
+            "on": "Blockers in the test code"
+          }
+        }
+      ]
+    },
+    "CRLC": {
+      "name": "Code Review",
+      "kind": "focused",
+      "pickWhen": "An open change / PR must be driven to merge-ready",
+      "exitArtifact": "Findings report; code-reviewer approves only at zero Blockers",
+      "stages": [
+        {
+          "id": "review",
+          "agent": "code-reviewer",
+          "skills": ["review"],
+          "produces": ["Findings report (plus SonarQube where configured)"],
+          "after": []
+        },
+        {
+          "id": "address",
+          "agent": "software-engineer",
+          "produces": ["Fixes for every Blocker"],
+          "when": "the review reports Blockers",
+          "loop": {
+            "to": "review",
+            "on": "Fixes go back to review until zero Blockers remain"
+          },
+          "note": "sqa-engineer addresses Blockers in test code; the product-owner resolves scope disputes. The orchestrator verifies and reports at zero Blockers."
+        }
+      ]
+    },
+    "AAW": {
+      "name": "Agent Artifact Work",
+      "kind": "focused",
+      "pickWhen": "The request changes agents, skills, hooks, rules / instructions, commands / prompts, agent memory or the workflow file (agent-artifact work)",
+      "exitArtifact": "The changed agent artifacts, their platform checks green, a PASS from brutal-critique on the docs, and passing tests and a clean code review on the code",
+      "note": "No work breakdown, no gates and no handoff records; the run state records each round and links every hand-back, and both are committed when the run closes. Change kinds (code or docs), what a round is and which findings start one: the workflow skill's references/aaw-review.md. The maxRounds of the three review loops are one shared budget, not one per loop: validate requires them equal. A change to agent-manager's own definition, or to a skill it owns, is made by a freshly spawned agent-manager, never by a running instance.",
+      "stages": [
+        {
+          "id": "change",
+          "agent": "agent-manager",
+          "produces": ["The changed paths, each marked code or docs", "The intent of the change", "The checks run and their results"],
+          "after": [],
+          "note": "Uses the management skill for each artifact kind; ends with the twin or build checks (harness-sync --check, or the plugin build --check). The orchestrator re-runs those checks before any review."
+        },
+        {
+          "id": "critique",
+          "agent": "brutal-critique",
+          "when": "the change set contains docs",
+          "produces": ["Critique of the docs in the change set with a PASS / REVISE verdict"],
+          "after": ["change"],
+          "loop": {
+            "to": "change",
+            "on": "A REVISE verdict, or Majors on a PASS: the critique goes back to agent-manager with the same changed paths and intent",
+            "maxRounds": 3
+          },
+          "note": "Reviews the docs paths against the intent, using the skill-management writing guide; read-only."
+        },
+        {
+          "id": "test",
+          "agent": "sqa-engineer",
+          "when": "the change set contains code",
+          "produces": ["Tests for the changed code", "The test run and its results"],
+          "after": ["change"],
+          "loop": {
+            "to": "change",
+            "on": "A test that fails because the code is wrong: the failure goes back to agent-manager",
+            "maxRounds": 3
+          },
+          "note": "Writes or updates tests for the code paths against the intent, in the repository's test folder outside the shipped plugin, with the repository's test runner (or the stack's built-in one), and runs them. The tests join the change set as code."
+        },
+        {
+          "id": "code-review",
+          "agent": "code-reviewer",
+          "when": "the change set contains code",
+          "produces": ["Severity-ranked findings on the code and its tests"],
+          "after": ["test"],
+          "loop": {
+            "to": "change",
+            "on": "A Blocker or Warning: the findings go back to agent-manager",
+            "maxRounds": 3
+          },
+          "note": "Reviews the code paths and the new tests against the intent (standards axis); read-only."
+        }
+      ]
+    },
+    "Release": {
+      "name": "Release",
+      "kind": "segment",
+      "pickWhen": "A release must ship",
+      "exitArtifact": "Release notes, published package",
+      "stages": [
+        {
+          "id": "checklist",
+          "agent": "product-manager",
+          "skills": ["product-planning"],
+          "produces": ["Release-gate checklist"],
+          "after": []
+        },
+        {
+          "id": "go-no-go",
+          "agent": "product-owner",
+          "produces": ["Go / no-go decision"],
+          "gate": "release"
+        },
+        {
+          "id": "deploy",
+          "agent": "devops-engineer",
+          "skills": ["github-cd-automation"],
+          "produces": ["Release notes", "Published package"],
+          "note": "Also the stack's package-deployment skill (nuget-package-deployment or npm-package-deployment)."
+        }
+      ]
+    }
+  },
+  "routing": {
+    "byType": {
+      "Feature": "AI-DLC",
+      "Bug Fix": "BFLC",
+      "Security Fix": "BFLC",
+      "TechDebt": "RLC",
+      "Testing": "TLC",
+      "Review": "CRLC",
+      "Release": "Release",
+      "Agent Artifact": "AAW"
+    },
+    "handOff": {
+      "agent-artifact work": "agent-manager",
+      "a factual or library/API question, or wide code exploration": "research-assistant",
+      "a backlog or prioritisation question": "product-manager",
+      "a scope or priority decision": "product-owner",
+      "an architecture question": "software-architect",
+      "a low-level design question": "system-engineer",
+      "a documentation-only change": "documentation-writer",
+      "a slide deck to create, update or review": "presentation-manager",
+      "a CI/CD or pipeline change": "devops-engineer"
+    },
+    "routeImmediately": ["Security Fix"]
+  },
+  "clarify": {
+    "maxRounds": 3,
+    "matrix": {
+      "product-owner": [
+        { "agent": "product-manager", "about": "release-gate checklist status before go / no-go" },
+        { "agent": "human", "about": "everything else is intent, asked through the orchestrator" }
+      ],
+      "requirement-analyst": [
+        { "agent": "product-owner", "about": "brief, scope, priority, intended behaviour" },
+        { "agent": "software-architect", "about": "test seams, boundaries and data shapes while drafting the spec they co-sign" },
+        { "agent": "system-engineer", "about": "test seams, boundaries and data shapes while drafting the spec they co-sign" }
+      ],
+      "product-manager": [
+        { "agent": "product-owner", "about": "scope, priority, milestone and release decisions" },
+        { "agent": "requirement-analyst", "about": "stories and ACs being sliced into work items" }
+      ],
+      "software-architect": [
+        { "agent": "product-owner", "about": "intended behaviour, scope, priority" },
+        { "agent": "requirement-analyst", "about": "story and AC wording, NFRs" },
+        { "agent": "software-engineer", "about": "at Architecture Conformance, the intent behind the diff" },
+        { "agent": "system-engineer", "about": "at Architecture Conformance, the intent behind the design" }
+      ],
+      "system-engineer": [
+        { "agent": "software-architect", "about": "architecture, boundaries, ADR intent, and every decision that would change the architecture (escalated, never made)" },
+        { "agent": "product-owner", "about": "intended behaviour" },
+        { "agent": "requirement-analyst", "about": "AC wording" }
+      ],
+      "software-engineer": [
+        { "agent": "software-architect", "about": "architecture, boundaries, ADR intent" },
+        { "agent": "system-engineer", "about": "low-level design, patterns, UI design, interfaces" },
+        { "agent": "requirement-analyst", "about": "the meaning of an AC in the spec" }
+      ],
+      "sqa-engineer": [
+        { "agent": "software-engineer", "about": "implementation details and the test cases the change implies" },
+        { "agent": "product-owner", "about": "acceptance criteria and intended behaviour" },
+        { "agent": "system-engineer", "about": "system design and test-case design (seams, interfaces)" },
+        { "agent": "software-architect", "about": "architecture testing (layer and dependency rules, NFRs)" }
+      ],
+      "documentation-writer": [
+        { "agent": "software-engineer", "about": "behaviour and public API of the change" },
+        { "agent": "software-architect", "about": "ADRs and architecture intent" }
+      ],
+      "code-reviewer": [
+        { "agent": "sqa-engineer", "about": "test intent, coverage, mutation results" },
+        { "agent": "software-engineer", "about": "implementation intent, trade-offs" },
+        { "agent": "requirement-analyst", "about": "the meaning of an AC on the spec axis" }
+      ],
+      "devops-engineer": [
+        { "agent": "product-manager", "about": "release-gate checklist, version, release scope" },
+        { "agent": "sqa-engineer", "about": "test and mutation gate results" },
+        { "agent": "product-owner", "about": "conditions attached to the go / no-go" }
+      ],
+      "brutal-critique": []
+    }
+  },
+  "documents": {
+    "writer": "documentation-writer",
+    "critic": "brutal-critique"
+  },
+  "review": {
+    "axes": ["standards", "spec"]
+  },
+  "artifacts": {
+    "backlog": "docs/backlog/backlog.md",
+    "product": "docs/product/",
+    "specs": "docs/specs/<feature-slug>.spec.md",
+    "decisions": "docs/architecture/decisions/",
+    "narratives": "docs/architecture/narratives/<feature-slug>.md",
+    "plans": "docs/plans/<feature-slug>.tasks.md",
+    "handoffs": "docs/handoffs/<work-item>/"
+  }
+}

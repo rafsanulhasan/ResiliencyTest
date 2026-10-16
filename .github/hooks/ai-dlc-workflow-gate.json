@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "hooks": {
+    "agentStop": [
+      {
+        "type": "command",
+        "bash": "node .claude/hooks/check-workflow.mjs",
+        "powershell": "node .claude/hooks/check-workflow.mjs",
+        "timeoutSec": 60
+      }
+    ]
+  }
+}

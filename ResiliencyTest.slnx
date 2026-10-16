@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ResiliencyTest.Contracts/ResiliencyTest.Contracts.csproj" />
+    <Project Path="src/ResiliencyTest.Demo/ResiliencyTest.Demo.csproj" />
+    <Project Path="src/ResiliencyTest.FlakyApi/ResiliencyTest.FlakyApi.csproj" />
+    <Project Path="src/ResiliencyTest.Resilience/ResiliencyTest.Resilience.csproj" />
+  </Folder>
+</Solution>

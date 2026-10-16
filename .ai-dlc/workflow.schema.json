@@ -1,0 +1,282 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/rafsanulhasan/ai-dlc-agent-workflow-plugin/workflow.schema.json",
+  "title": "AI-DLC project workflow",
+  "description": "The AI-DLC team's workflow for this repository: lifecycles and their stages, who hands off to whom, gates and their approvers, the clarify matrix and request routing. The orchestrator reads it on every request; when it is absent the plugin default applies. Check it with `node .ai-dlc/workflow.mjs validate`; change it with `/ai-dlc:workflow edit <change>`. Fixed guardrails (agent-manager's exclusive authority over agent artifacts, a freshly spawned agent-manager for changes to its own definition and skills, trust-but-verify, a handoff record at every boundary and every hand-back stored, the test gate hooks and the workflow gate, an orchestrator that only delegates, stage owners that never do another agent's job) are not configurable here.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "agents", "gates", "lifecycles", "routing", "clarify", "documents", "review", "artifacts"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Path to this schema, so editors offer completion, hover documentation and validation. Keep `./workflow.schema.json`."
+    },
+    "version": {
+      "const": 1,
+      "description": "Format version of this file. Always 1."
+    },
+    "agents": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["disabled", "custom"],
+      "description": "Which plugin agents take part, and which of the project's own agents join them.",
+      "properties": {
+        "disabled": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/agentId" },
+          "description": "Plugin agents this project runs without (bare ids, e.g. `brutal-critique`). Every stage, routing entry and clarify entry that names a disabled agent must be removed or reassigned. `orchestrator`, `agent-manager`, `brutal-critique`, `sqa-engineer` and `code-reviewer` (which review every agent-artifact change: docs, and code) cannot be disabled."
+        },
+        "custom": {
+          "type": "object",
+          "description": "The project's own agents, by id, usable as stage owners, hand-off targets and clarify targets. Each must exist as `.claude/agents/<id>.md` or `.github/agents/<id>.agent.md`. Custom ids keep their own name; the orchestrator adds the `ai-dlc:` prefix only to plugin agents.",
+          "propertyNames": { "$ref": "#/$defs/agentId" },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["description"],
+            "properties": {
+              "description": {
+                "type": "string",
+                "minLength": 1,
+                "description": "What the agent does in this workflow, in one sentence."
+              }
+            }
+          }
+        }
+      }
+    },
+    "gates": {
+      "type": "object",
+      "description": "Gates by id (defaults: G1 Clarify, G2 Refine / Align, G3 Plan, G4 Approve, release go / no-go). A stage's `gate` is crossed when that stage ends.",
+      "propertyNames": { "pattern": "^[A-Za-z][A-Za-z0-9_-]*$" },
+      "additionalProperties": { "$ref": "#/$defs/gate" }
+    },
+    "lifecycles": {
+      "type": "object",
+      "minProperties": 1,
+      "description": "Lifecycles by code (AI-DLC, PDLC, ASDLC, STBLC, FDLC, BFLC, RLC, TLC, CRLC, Release, plus any `custom` ones). Each has either `segments` (a composite of other lifecycles, run in order) or `stages`, never both.",
+      "propertyNames": { "pattern": "^[A-Za-z][A-Za-z0-9_-]*$" },
+      "additionalProperties": { "$ref": "#/$defs/lifecycle" }
+    },
+    "routing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["byType", "handOff", "routeImmediately"],
+      "description": "How the orchestrator's request-routing picks a lifecycle or a single agent for each work item. A lifecycle the user names in the request always wins.",
+      "properties": {
+        "byType": {
+          "type": "object",
+          "required": ["Agent Artifact"],
+          "description": "Request type (Feature, Bug Fix, Security Fix, TechDebt, Testing, Review, Release, Agent Artifact) -> lifecycle code it runs by default. Custom lifecycles are also picked by their `pickWhen`. `Agent Artifact` is required: its lifecycle (default `AAW`) must start with `agent-manager` and have stages that loop back to it: `brutal-critique` (docs, on REVISE), `sqa-engineer` (code, on failing tests) and `code-reviewer` (code, on Blockers or Warnings, after the `sqa-engineer` stage), with equal `loop.maxRounds` (one shared round budget). A review stage's `when` is omitted or exactly `the change set contains docs` (`brutal-critique`) / `the change set contains code` (`sqa-engineer`, `code-reviewer`), case and spacing ignored; `code-reviewer` lists the `sqa-engineer` stage directly in `after`. The rules: the workflow skill's references/aaw-review.md.",
+          "additionalProperties": { "type": "string", "minLength": 1 }
+        },
+        "handOff": {
+          "type": "object",
+          "description": "Work that needs no lifecycle -> the single agent it is handed to. Keys are kinds of work in plain words. `agent-artifact work` always goes to `agent-manager`.",
+          "additionalProperties": { "$ref": "#/$defs/agentId" }
+        },
+        "routeImmediately": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Request types that run before the human confirms the plan, then are reported. P0 bugs are always routed immediately as well."
+        }
+      }
+    },
+    "clarify": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["maxRounds", "matrix"],
+      "description": "The Clarify loop: whom a stage agent may ask when one of its inputs is unclear.",
+      "properties": {
+        "maxRounds": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Rounds per stage (one batched request and its answers) before the stage is blocked and escalated to the human."
+        },
+        "matrix": {
+          "type": "object",
+          "description": "Asking agent -> the agents it may consult and about what. `human` as a target means the question goes to the human through the orchestrator. An asker with an empty list consults no one.",
+          "propertyNames": { "$ref": "#/$defs/agentId" },
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["agent", "about"],
+              "properties": {
+                "agent": {
+                  "$ref": "#/$defs/agentId",
+                  "description": "The agent to ask (bare id), or `human`."
+                },
+                "about": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The topics this agent answers for the asker."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "documents": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["writer", "critic"],
+      "description": "Who writes and who critiques the documents of stages marked `critique: true`.",
+      "properties": {
+        "writer": {
+          "$ref": "#/$defs/agentId",
+          "description": "The agent that writes documents (default `documentation-writer`); a stage owner may write its own and still have it critiqued."
+        },
+        "critic": {
+          "anyOf": [{ "$ref": "#/$defs/agentId" }, { "type": "null" }],
+          "description": "The agent that critiques documents in parallel with the writer before a gate (default `brutal-critique`). `null` skips document critique — documents then reach gates unreviewed. It never removes the review of agent-artifact changes (the `AAW` lifecycle)."
+        }
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["axes"],
+      "description": "The code review stage.",
+      "properties": {
+        "axes": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["standards", "spec"] },
+          "description": "Review axes; one code-reviewer instance runs per axis, in parallel, each presented under its own heading. `standards`: conventions and code quality. `spec`: conformance to the frozen spec and its ACs."
+        }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backlog", "product", "specs", "decisions", "narratives", "plans", "handoffs"],
+      "description": "Where the lifecycles write their artifacts, relative to the repository root.",
+      "properties": {
+        "backlog": { "type": "string", "minLength": 1, "description": "The product backlog file." },
+        "product": { "type": "string", "minLength": 1, "description": "Folder for product briefs and stories." },
+        "specs": { "type": "string", "minLength": 1, "description": "Frozen spec per feature; `<feature-slug>` is replaced." },
+        "decisions": { "type": "string", "minLength": 1, "description": "Folder for ADRs." },
+        "narratives": { "type": "string", "minLength": 1, "description": "Architecture narrative per feature." },
+        "plans": { "type": "string", "minLength": 1, "description": "Task plan per feature." },
+        "handoffs": { "type": "string", "minLength": 1, "description": "Folder for handoff records per work item; `<work-item>` is replaced. It also holds each work item's run state, `run.md`, which the orchestrator writes before every spawn and after every return or gate, so a new session can resume the run, and every agent's hand-back, `<NN>-<agent>-handback.md`: the report it returned, stored verbatim by the orchestrator (or the main agent, which also stores its own) as soon as it returns, numbered in the same sequence as the handoff records (parallel agents in the order of their Agent calls)." }
+      }
+    }
+  },
+  "$defs": {
+    "agentId": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "description": "A bare agent id in kebab-case: a plugin agent (`software-engineer`, without `ai-dlc:`) or a custom agent from `agents.custom`."
+    },
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "approves", "approver"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "description": "Human-readable gate name, e.g. `Clarify`." },
+        "approves": { "type": "string", "minLength": 1, "description": "The artifact the approver signs off at this gate." },
+        "approver": {
+          "enum": ["human", "orchestrator", "none"],
+          "description": "`human`: the orchestrator stops and waits for the human's approval. `orchestrator`: the orchestrator approves on the human's behalf and records it in the handoff record. `none`: the gate is skipped, but the handoff record is still written and verified."
+        },
+        "note": { "type": "string", "description": "Anything else the approver should know." }
+      }
+    },
+    "lifecycle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "kind", "pickWhen", "exitArtifact"],
+      "oneOf": [
+        { "required": ["segments"], "not": { "required": ["stages"] } },
+        { "required": ["stages"], "not": { "required": ["segments"] } }
+      ],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "description": "Human-readable name, e.g. `Feature Development`." },
+        "kind": {
+          "enum": ["primary", "segment", "focused", "custom"],
+          "description": "`primary`: the full lifecycle (AI-DLC). `segment`: a part of the primary lifecycle that can also run alone. `focused`: an entry point for bugs, refactors, tests or reviews. `custom`: a lifecycle this project added."
+        },
+        "pickWhen": { "type": "string", "minLength": 1, "description": "When request-routing picks this lifecycle, in plain words." },
+        "exitArtifact": { "type": "string", "minLength": 1, "description": "What exists when the lifecycle is done." },
+        "segments": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Composite lifecycle: the lifecycle codes it runs, in order, gate by gate."
+        },
+        "stages": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/stage" },
+          "description": "The stages, in order. Each starts after the stages named in its `after` (default: the stage before it)."
+        },
+        "note": { "type": "string", "description": "Rules that apply to the whole lifecycle." }
+      }
+    },
+    "stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "agent"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "description": "Stage id, unique within its lifecycle, e.g. `build`."
+        },
+        "agent": { "$ref": "#/$defs/agentId", "description": "The agent that owns this stage (bare id)." },
+        "skills": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "Skills the owner runs in this stage, named in its brief (bare skill names). Each must be a plugin skill listed in `.ai-dlc/catalog.json` or a project skill in `.claude/skills/` or `.github/skills/`; `validate` fails otherwise."
+        },
+        "produces": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "description": "The artifacts this stage hands to the next one (paths or short descriptions). The orchestrator verifies each before the next stage starts."
+        },
+        "after": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string" },
+          "description": "Stage ids that must finish before this one starts — who hands off to whom. Omitted: the previous stage. `[]`: starts the lifecycle. Stages with the same `after` run in parallel. A stage skipped by its `when` counts as finished."
+        },
+        "when": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Run this stage only under this condition, in plain words (e.g. `the change touches UI`). The orchestrator decides and records the decision in the handoff. On the review stages of the Agent Artifact lifecycle only one phrase is accepted per reviewer: `the change set contains docs` for `brutal-critique`, `the change set contains code` for `sqa-engineer` and `code-reviewer` (case and spacing ignored), or no `when` at all."
+        },
+        "gate": {
+          "type": "string",
+          "description": "Gate id (from `gates`) crossed when this stage ends."
+        },
+        "loop": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["to", "on"],
+          "description": "A refinement loop: work goes back to an earlier stage until the condition is cleared.",
+          "properties": {
+            "to": { "type": "string", "description": "Stage id work returns to." },
+            "on": { "type": "string", "minLength": 1, "description": "What sends work back, in plain words." },
+            "maxRounds": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Rounds before the orchestrator stops and escalates to the human. Omitted: loop until the condition is cleared. On the review stages of the Agent Artifact lifecycle (`AAW`) it is required, the same on all three, and one shared budget for the whole run, not one per loop (the workflow skill's references/aaw-review.md)."
+            }
+          }
+        },
+        "critique": {
+          "type": "boolean",
+          "description": "Documents this stage produces are written by `documents.writer` (or the owner) and critiqued by `documents.critic` in parallel before the next gate."
+        },
+        "note": { "type": "string", "description": "Anything else the stage owner's brief must carry." }
+      }
+    }
+  }
+}
